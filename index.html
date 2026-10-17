@@ -192,9 +192,31 @@ function admin() {
     btn("Salvar para todos", saveAll, ""), btn("Cancelar", () => { draft = null; A.style.display = "none"; })]));
   A.scrollIntoView({ block: "nearest" });
 }
+// ---- Salvar para todos no GitHub Pages: grava as opções no index.html do repositório
+async function saveGithub() {
+  const owner = "maestrostr1108-sketch", repo = "Ficha-Blood-Shinobi", path = "index.html", TK = "bs_gh_token";
+  let tk = ""; try { tk = localStorage.getItem(TK) || ""; } catch (e) {}
+  if (!tk) { tk = (prompt("Cole seu token do GitHub (permissão Contents: Read and write, só neste repositório). Ele fica salvo apenas neste navegador.") || "").trim(); if (!tk) { say("Salvamento cancelado."); return; } }
+  const u = "https://api.github.com/repos/" + owner + "/" + repo + "/contents/" + path, h = { Authorization: "Bearer " + tk, Accept: "application/vnd.github+json" };
+  try {
+    say("Salvando…");
+    const g = await fetch(u, { headers: h });
+    if (!g.ok) { try { localStorage.removeItem(TK); } catch (e) {} say("Token inválido ou sem permissão. Toque em “Salvar para todos” e informe um novo token."); return; }
+    const f = await g.json();
+    const src = new TextDecoder().decode(Uint8Array.from(atob(f.content.replace(/\n/g, "")), c => c.charCodeAt(0)));
+    const j = JSON.stringify(draft).replace(/</g, "\\u003c");
+    const out = src.replace(/(<script id="cfg" type="application\/json">)[\s\S]*?(<\/script>)/, (m, a, b) => a + j + b);
+    let bin = ""; new TextEncoder().encode(out).forEach(b => bin += String.fromCharCode(b));
+    const p = await fetch(u, { method: "PUT", headers: h, body: JSON.stringify({ message: "Atualiza opções da ficha", content: btoa(bin), sha: f.sha }) });
+    if (!p.ok) throw new Error("put");
+    try { localStorage.setItem(TK, tk); } catch (e) {}
+    cfg = JSON.parse(JSON.stringify(draft)); draft = null; $("adm").style.display = "none"; render();
+    say("Opções salvas. O link pode levar cerca de 1 minuto para mostrar a mudança.");
+  } catch (e) { say("Não foi possível salvar no GitHub."); }
+}
 async function saveAll() {
   let art = null; try { art = window.claude ? await window.claude.use("artifact") : null; } catch (e) {}
-  if (!art) { say("Para salvar para todos, abra o link logado na conta dona da página."); return; }
+  if (!art) { if (/github\.io$/.test(location.hostname)) return saveGithub(); say("Para salvar para todos, abra o link logado na conta dona da página."); return; }
   const j = JSON.stringify(draft).replace(/</g, "\\u003c");
   const html = '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Blood Shinobi – Ficha de Personagem</title><link href="https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&display=swap" rel="stylesheet"><script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"><\/script><style id="css">' + $("css").textContent + '</style></head><body>' + WRAP0 + '<script id="cfg" type="application/json">' + j + '<\/script><script id="app">' + $("app").textContent + '<\/script></body></html>';
   try { say("Salvando…"); await art.publish(html); say("Opções salvas."); } catch (e) { say(e && /writer|granted/.test(e.code || "") ? "Somente quem edita a página pode salvar as opções." : "Não foi possível salvar as opções."); }
